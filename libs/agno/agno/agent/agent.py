@@ -47,7 +47,7 @@ from agno.media import Audio, File, Image, Video
 from agno.memory import MemoryManager
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics, SessionMetrics, SessionModelMetrics
 from agno.models.response import ModelResponse, ToolExecution
 from agno.reasoning.step import ReasoningStep
 from agno.registry.registry import Registry
@@ -1097,7 +1097,7 @@ class Agent:
     def _update_metadata(self, session: AgentSession) -> None:
         return _storage.update_metadata(self, session=session)
 
-    def _get_session_metrics(self, session: AgentSession) -> Optional[Metrics]:
+    def _get_session_metrics(self, session: AgentSession) -> SessionMetrics:
         return _storage.get_session_metrics_internal(self, session=session)
 
     def _read_or_create_session(
@@ -1229,10 +1229,10 @@ class Agent:
             self, session_state_updates=session_state_updates, session_id=session_id
         )
 
-    def get_session_metrics(self, session_id: Optional[str] = None) -> Optional[Metrics]:
+    def get_session_metrics(self, session_id: Optional[str] = None) -> Optional[SessionMetrics]:
         return _storage.get_session_metrics(self, session_id=session_id)
 
-    async def aget_session_metrics(self, session_id: Optional[str] = None) -> Optional[Metrics]:
+    async def aget_session_metrics(self, session_id: Optional[str] = None) -> Optional[SessionMetrics]:
         return await _storage.aget_session_metrics(self, session_id=session_id)
 
     def delete_session(self, session_id: str) -> None:
@@ -1320,8 +1320,17 @@ class Agent:
             self, run_response=run_response, input=input, session_id=session_id, user_id=user_id
         )
 
-    def _calculate_run_metrics(self, messages: List[Message], current_run_metrics: Optional[Metrics] = None) -> Metrics:
-        return _response.calculate_run_metrics(self, messages=messages, current_run_metrics=current_run_metrics)
+    def _accumulate_model_metrics(
+        self,
+        model_response: ModelResponse,
+        model: Model,
+        model_type: str,
+        run_response: RunOutput,
+    ) -> None:
+        """Accumulate metrics from a model response into run_response.metrics."""
+        from agno.metrics import accumulate_model_metrics
+
+        accumulate_model_metrics(model_response, model, model_type, run_response)
 
     def _handle_reasoning(
         self, run_response: RunOutput, run_messages: RunMessages, run_context: Optional[RunContext] = None
@@ -1426,17 +1435,25 @@ class Agent:
         )
 
     def _parse_response_with_parser_model(
-        self, model_response: ModelResponse, run_messages: RunMessages, run_context: Optional[RunContext] = None
+        self,
+        model_response: ModelResponse,
+        run_messages: RunMessages,
+        run_response: RunOutput,
+        run_context: Optional[RunContext] = None,
     ) -> None:
         return _response.parse_response_with_parser_model(
-            self, model_response=model_response, run_messages=run_messages, run_context=run_context
+            self, model_response=model_response, run_messages=run_messages, run_response=run_response, run_context=run_context
         )
 
     async def _aparse_response_with_parser_model(
-        self, model_response: ModelResponse, run_messages: RunMessages, run_context: Optional[RunContext] = None
+        self,
+        model_response: ModelResponse,
+        run_messages: RunMessages,
+        run_response: RunOutput,
+        run_context: Optional[RunContext] = None,
     ) -> None:
         return await _response.aparse_response_with_parser_model(
-            self, model_response=model_response, run_messages=run_messages, run_context=run_context
+            self, model_response=model_response, run_messages=run_messages, run_response=run_response, run_context=run_context
         )
 
     def _parse_response_with_parser_model_stream(
@@ -1461,9 +1478,11 @@ class Agent:
             self, session=session, run_response=run_response, stream_events=stream_events, run_context=run_context
         )
 
-    def _generate_response_with_output_model(self, model_response: ModelResponse, run_messages: RunMessages) -> None:
+    def _generate_response_with_output_model(
+        self, model_response: ModelResponse, run_messages: RunMessages, run_response: RunOutput
+    ) -> None:
         return _response.generate_response_with_output_model(
-            self, model_response=model_response, run_messages=run_messages
+            self, model_response=model_response, run_messages=run_messages, run_response=run_response
         )
 
     def _generate_response_with_output_model_stream(
@@ -1478,10 +1497,10 @@ class Agent:
         )
 
     async def _agenerate_response_with_output_model(
-        self, model_response: ModelResponse, run_messages: RunMessages
+        self, model_response: ModelResponse, run_messages: RunMessages, run_response: RunOutput
     ) -> None:
         return await _response.agenerate_response_with_output_model(
-            self, model_response=model_response, run_messages=run_messages
+            self, model_response=model_response, run_messages=run_messages, run_response=run_response
         )
 
     def _agenerate_response_with_output_model_stream(
@@ -1868,8 +1887,9 @@ class Agent:
         self,
         session: AgentSession,
         run_response: RunOutput,
-        model_response: ModelResponse,
-        model_response_event: Union[ModelResponse, RunOutputEvent, TeamRunOutputEvent],
+        run_messages: Optional[RunMessages] = None,
+        model_response: Optional[ModelResponse] = None,
+        model_response_event: Optional[Union[ModelResponse, RunOutputEvent, TeamRunOutputEvent]] = None,
         reasoning_state: Optional[Dict[str, Any]] = None,
         parse_structured_output: bool = False,
         stream_events: bool = False,
@@ -1880,6 +1900,7 @@ class Agent:
             self,
             session=session,
             run_response=run_response,
+            run_messages=run_messages,
             model_response=model_response,
             model_response_event=model_response_event,
             reasoning_state=reasoning_state,

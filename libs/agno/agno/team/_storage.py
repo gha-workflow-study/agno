@@ -23,7 +23,7 @@ from agno.db.base import AsyncBaseDb, BaseDb, ComponentType, SessionType, UserMe
 from agno.db.utils import db_from_dict
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics, SessionMetrics, SessionModelMetrics
 from agno.models.utils import get_model
 from agno.registry.registry import Registry
 from agno.run import RunStatus
@@ -1573,13 +1573,13 @@ async def aupdate_session_state(
     )
 
 
-def get_session_metrics(team: "Team", session_id: Optional[str] = None) -> Optional[Metrics]:
+def get_session_metrics(team: "Team", session_id: Optional[str] = None) -> Optional[SessionMetrics]:
     """Get the session metrics for the given session ID.
 
     Args:
         session_id: The session ID to get the metrics for. If not provided, the current cached session ID is used.
     Returns:
-        Optional[Metrics]: The session metrics.
+        Optional[SessionMetrics]: The session metrics.
     """
     session_id = session_id or team.session_id
     if session_id is None:
@@ -1588,13 +1588,13 @@ def get_session_metrics(team: "Team", session_id: Optional[str] = None) -> Optio
     return get_session_metrics_util(cast(Any, team), session_id=session_id)
 
 
-async def aget_session_metrics(team: "Team", session_id: Optional[str] = None) -> Optional[Metrics]:
+async def aget_session_metrics(team: "Team", session_id: Optional[str] = None) -> Optional[SessionMetrics]:
     """Get the session metrics for the given session ID.
 
     Args:
         session_id: The session ID to get the metrics for. If not provided, the current cached session ID is used.
     Returns:
-        Optional[Metrics]: The session metrics.
+        Optional[SessionMetrics]: The session metrics.
     """
     session_id = session_id or team.session_id
     if session_id is None:

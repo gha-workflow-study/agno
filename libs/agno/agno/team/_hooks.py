@@ -505,8 +505,7 @@ def _update_run_response(
     # Update the TeamRunOutput messages
     run_response.messages = messages_for_run_response
 
-    # Update the TeamRunOutput metrics
-    run_response.metrics = team._calculate_metrics(messages_for_run_response, current_run_metrics=run_response.metrics)
+    # Metrics are already accumulated immediately during model calls
 
     if model_response.tool_executions:
         for tool_call in model_response.tool_executions:
@@ -647,8 +646,7 @@ def _handle_model_response_stream(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the TeamRunOutput messages
     run_response.messages = messages_for_run_response
-    # Update the TeamRunOutput metrics
-    run_response.metrics = team._calculate_metrics(messages_for_run_response, current_run_metrics=run_response.metrics)
+    # Metrics are already accumulated immediately during model calls
 
     if stream_events and reasoning_state["reasoning_started"]:
         all_reasoning_steps: List[ReasoningStep] = []
@@ -802,8 +800,7 @@ async def _ahandle_model_response_stream(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the TeamRunOutput messages
     run_response.messages = messages_for_run_response
-    # Update the TeamRunOutput metrics
-    run_response.metrics = team._calculate_metrics(messages_for_run_response, current_run_metrics=run_response.metrics)
+    # Metrics are already accumulated immediately during model calls
 
     if stream_events and reasoning_state["reasoning_started"]:
         all_reasoning_steps: List[ReasoningStep] = []

@@ -37,7 +37,7 @@ from agno.filters import FilterExpr
 from agno.media import Audio, File, Image, Video
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics
 from agno.models.response import ModelResponse, ToolExecution
 from agno.run import RunContext, RunStatus
 from agno.run.agent import (
@@ -265,10 +265,10 @@ def run_impl(
                 raise_if_cancelled(run_response.run_id)  # type: ignore
 
                 # If an output model is provided, generate output using the output model
-                agent._generate_response_with_output_model(model_response, run_messages)
+                agent._generate_response_with_output_model(model_response, run_messages, run_response)
 
                 # If a parser model is provided, structure the response separately
-                agent._parse_response_with_parser_model(model_response, run_messages, run_context=run_context)
+                agent._parse_response_with_parser_model(model_response, run_messages, run_response, run_context=run_context)
 
                 # 7. Update the RunOutput with the model response
                 agent._update_run_response(
@@ -972,7 +972,7 @@ def run_dispatch(
         run_response.model_provider = agent.model.provider if agent.model is not None else None
 
         # Start the run metrics timer, to calculate the run duration
-        run_response.metrics = Metrics()
+        run_response.metrics = RunMetrics()
         run_response.metrics.start_timer()
     except Exception:
         cleanup_run(run_id)
@@ -1188,12 +1188,12 @@ async def arun_impl(
 
                 # If an output model is provided, generate output using the output model
                 await agent._agenerate_response_with_output_model(
-                    model_response=model_response, run_messages=run_messages
+                    model_response=model_response, run_messages=run_messages, run_response=run_response
                 )
 
                 # If a parser model is provided, structure the response separately
                 await agent._aparse_response_with_parser_model(
-                    model_response=model_response, run_messages=run_messages, run_context=run_context
+                    model_response=model_response, run_messages=run_messages, run_response=run_response, run_context=run_context
                 )
 
                 # 10. Update the RunOutput with the model response
@@ -1995,7 +1995,7 @@ def arun_dispatch(  # type: ignore
     run_response.model_provider = agent.model.provider if agent.model is not None else None
 
     # Start the run metrics timer, to calculate the run duration
-    run_response.metrics = Metrics()
+    run_response.metrics = RunMetrics()
     run_response.metrics.start_timer()
 
     # Pass the new run_response to _arun
@@ -2300,10 +2300,10 @@ def continue_run_impl(
                 raise_if_cancelled(run_response.run_id)  # type: ignore
 
                 # If an output model is provided, generate output using the output model
-                agent._generate_response_with_output_model(model_response, run_messages)
+                agent._generate_response_with_output_model(model_response, run_messages, run_response)
 
                 # If a parser model is provided, structure the response separately
-                agent._parse_response_with_parser_model(model_response, run_messages, run_context=run_context)
+                agent._parse_response_with_parser_model(model_response, run_messages, run_response, run_context=run_context)
 
                 # 3. Update the RunOutput with the model response
                 agent._update_run_response(
@@ -2971,12 +2971,12 @@ async def acontinue_run_impl(
 
                 # If an output model is provided, generate output using the output model
                 await agent._agenerate_response_with_output_model(
-                    model_response=model_response, run_messages=run_messages
+                    model_response=model_response, run_messages=run_messages, run_response=run_response
                 )
 
                 # If a parser model is provided, structure the response separately
                 await agent._aparse_response_with_parser_model(
-                    model_response=model_response, run_messages=run_messages, run_context=run_context
+                    model_response=model_response, run_messages=run_messages, run_response=run_response, run_context=run_context
                 )
 
                 # 9. Update the RunOutput with the model response

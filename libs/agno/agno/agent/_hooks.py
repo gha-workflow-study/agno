@@ -29,7 +29,7 @@ from agno.exceptions import InputCheckError, OutputCheckError
 from agno.media import Audio
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics
 from agno.models.response import ModelResponse, ModelResponseEvent, ToolExecution
 from agno.reasoning.step import ReasoningStep, ReasoningSteps
 from agno.run import RunContext, RunStatus
@@ -645,6 +645,7 @@ def handle_get_user_input_tool_update(agent: Agent, run_messages: RunMessages, t
         for user_input_field in tool.user_input_schema or []
     ]
     # Add the tool call result to the run_messages
+    # Tool messages don't get metrics - only assistant messages do
     run_messages.messages.append(
         Message(
             role=agent.model.tool_message_role,
@@ -652,7 +653,6 @@ def handle_get_user_input_tool_update(agent: Agent, run_messages: RunMessages, t
             tool_call_id=tool.tool_call_id,
             tool_name=tool.tool_name,
             tool_args=tool.tool_args,
-            metrics=Metrics(duration=0),
         )
     )
 
@@ -1032,10 +1032,7 @@ def update_run_response(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the RunOutput messages
     run_response.messages = messages_for_run_response
-    # Update the RunOutput metrics
-    run_response.metrics = agent._calculate_run_metrics(
-        messages=messages_for_run_response, current_run_metrics=run_response.metrics
-    )
+    # Metrics are already accumulated immediately during model calls
 
 
 # ---------------------------------------------------------------------------
@@ -1150,6 +1147,7 @@ def handle_model_response_stream(
             agent,
             session=session,
             run_response=run_response,
+            run_messages=run_messages,
             model_response=model_response,
             model_response_event=model_response_event,
             reasoning_state=reasoning_state,
@@ -1164,10 +1162,7 @@ def handle_model_response_stream(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the RunOutput messages
     run_response.messages = messages_for_run_response
-    # Update the RunOutput metrics
-    run_response.metrics = agent._calculate_run_metrics(
-        messages=messages_for_run_response, current_run_metrics=run_response.metrics
-    )
+    # Metrics are already accumulated immediately during model calls
 
     # Determine reasoning completed
     if stream_events and reasoning_state["reasoning_started"]:
@@ -1305,6 +1300,7 @@ async def ahandle_model_response_stream(
             agent,
             session=session,
             run_response=run_response,
+            run_messages=run_messages,
             model_response=model_response,
             model_response_event=model_response_event,
             reasoning_state=reasoning_state,
@@ -1320,10 +1316,7 @@ async def ahandle_model_response_stream(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the RunOutput messages
     run_response.messages = messages_for_run_response
-    # Update the RunOutput metrics
-    run_response.metrics = agent._calculate_run_metrics(
-        messages=messages_for_run_response, current_run_metrics=run_response.metrics
-    )
+    # Metrics are already accumulated immediately during model calls
 
     if stream_events and reasoning_state["reasoning_started"]:
         all_reasoning_steps: List[ReasoningStep] = []
@@ -1355,8 +1348,9 @@ def handle_model_response_chunk(
     agent: Agent,
     session: AgentSession,
     run_response: RunOutput,
-    model_response: ModelResponse,
-    model_response_event: Union[ModelResponse, RunOutputEvent, TeamRunOutputEvent],
+    run_messages: Optional[RunMessages] = None,
+    model_response: Optional[ModelResponse] = None,
+    model_response_event: Optional[Union[ModelResponse, RunOutputEvent, TeamRunOutputEvent]] = None,
     reasoning_state: Optional[Dict[str, Any]] = None,
     parse_structured_output: bool = False,
     stream_events: bool = False,

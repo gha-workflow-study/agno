@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agno.agent import Agent
+from agno.metrics import MessageMetrics, RunMetrics
 from agno.models.message import Message
-from agno.models.metrics import Metrics
 from agno.models.openai import OpenAIChat
 from agno.run import RunContext
 from agno.run.team import TeamRunOutput
@@ -100,29 +100,27 @@ def test_set_id_auto_generated():
     assert is_valid_uuid(team.id)
 
 
-def test_team_calculate_metrics_preserves_duration(team):
-    """Test that _calculate_metrics preserves the duration from current_run_metrics."""
+def test_team_accumulate_model_metrics(team):
+    """Test that _accumulate_model_metrics accumulates metrics from model response."""
+    from agno.metrics import ModelMetrics, accumulate_model_metrics
+    from agno.models.response import ModelResponse
 
-    initial_metrics = Metrics()
-    initial_metrics.duration = 5.5
-    initial_metrics.time_to_first_token = 0.5
+    run_response = TeamRunOutput(content="test")
+    run_response.metrics = RunMetrics()
+    run_response.metrics.start_timer()
 
-    message_metrics = Metrics()
-    message_metrics.input_tokens = 10
-    message_metrics.output_tokens = 20
+    # Simulate a model response with usage metrics
+    model_response = ModelResponse(content="response")
+    model_response.response_usage = RunMetrics(input_tokens=10, output_tokens=20, total_tokens=30)
 
-    messages = [Message(role="assistant", content="Response", metrics=message_metrics)]
+    team._accumulate_model_metrics(model_response, team.model, "model", run_response)
 
-    # Pass the initial metrics (containing duration) to the calculation
-    calculated = team._calculate_metrics(messages, current_run_metrics=initial_metrics)
-
-    # Tokens should be summed (0 from initial + 10/20 from message)
-    assert calculated.input_tokens == 10
-    assert calculated.output_tokens == 20
-
-    # Duration should be preserved from initial_metrics
-    assert calculated.duration == 5.5
-    assert calculated.time_to_first_token == 0.5
+    assert run_response.metrics.input_tokens == 10
+    assert run_response.metrics.output_tokens == 20
+    assert run_response.metrics.total_tokens == 30
+    assert run_response.metrics.details is not None
+    assert "model" in run_response.metrics.details
+    assert len(run_response.metrics.details["model"]) == 1
 
 
 def test_team_update_session_metrics_accumulates(team):
@@ -133,29 +131,35 @@ def test_team_update_session_metrics_accumulates(team):
 
     # First Run
     run1 = TeamRunOutput(content="run 1")
-    run1.metrics = Metrics()
+    run1.metrics = RunMetrics()
     run1.metrics.duration = 2.0
     run1.metrics.input_tokens = 100
 
-    team._update_session_metrics(session, run_response=run1)
+    # Add run to session
+    session.upsert_run(run1)
+    team._update_session_metrics(session=session, run_response=run1)
 
     metrics1 = session.session_data["session_metrics"]
-    assert metrics1.duration == 2.0
-    assert metrics1.input_tokens == 100
+    assert metrics1["average_duration"] == 2.0
+    assert metrics1["input_tokens"] == 100
+    assert metrics1["total_runs"] == 1
 
     # Second Run
     run2 = TeamRunOutput(content="run 2")
-    run2.metrics = Metrics()
+    run2.metrics = RunMetrics()
     run2.metrics.duration = 3.0
     run2.metrics.input_tokens = 50
 
+    # Add second run to session
+    session.upsert_run(run2)
     # Should accumulate with previous session metrics
-    team._update_session_metrics(session, run_response=run2)
+    team._update_session_metrics(session=session, run_response=run2)
 
     metrics2 = session.session_data["session_metrics"]
 
-    assert metrics2.duration == 5.0  # 2.0 + 3.0
-    assert metrics2.input_tokens == 150  # 100 + 50
+    assert metrics2["average_duration"] == 2.5  # (2.0 + 3.0) / 2
+    assert metrics2["input_tokens"] == 150  # 100 + 50
+    assert metrics2["total_runs"] == 2
 
 
 @pytest.mark.asyncio

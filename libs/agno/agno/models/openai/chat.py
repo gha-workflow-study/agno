@@ -9,9 +9,9 @@ from pydantic import BaseModel
 
 from agno.exceptions import ModelAuthenticationError, ModelProviderError
 from agno.media import Audio
+from agno.metrics import RunMetrics
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
 from agno.models.response import ModelResponse
 from agno.run.agent import RunOutput
 from agno.run.team import TeamRunOutput
@@ -406,10 +406,8 @@ class OpenAIChat(Model):
             ModelResponse: The chat completion response from the API.
         """
         try:
-            if run_response and run_response.metrics:
-                run_response.metrics.set_time_to_first_token()
-
-            assistant_message.metrics.start_timer()
+            # Initialize MessageMetrics and start timer
+            self._ensure_message_metrics_initialized(assistant_message)
 
             provider_response = self.get_client().chat.completions.create(
                 model=self.id,
@@ -418,7 +416,8 @@ class OpenAIChat(Model):
                     response_format=response_format, tools=tools, tool_choice=tool_choice, run_response=run_response
                 ),
             )
-            assistant_message.metrics.stop_timer()
+            if assistant_message.metrics is not None:
+                assistant_message.metrics.stop_timer()
 
             # Parse the response into an Agno ModelResponse object
             model_response = self._parse_provider_response(provider_response, response_format=response_format)
@@ -491,10 +490,8 @@ class OpenAIChat(Model):
             ModelResponse: The chat completion response from the API.
         """
         try:
-            if run_response and run_response.metrics:
-                run_response.metrics.set_time_to_first_token()
-
-            assistant_message.metrics.start_timer()
+            # Initialize MessageMetrics and start timer
+            self._ensure_message_metrics_initialized(assistant_message)
             response = await self.get_async_client().chat.completions.create(
                 model=self.id,
                 messages=[self._format_message(m, compress_tool_results) for m in messages],  # type: ignore
@@ -502,7 +499,8 @@ class OpenAIChat(Model):
                     response_format=response_format, tools=tools, tool_choice=tool_choice, run_response=run_response
                 ),
             )
-            assistant_message.metrics.stop_timer()
+            if assistant_message.metrics is not None:
+                assistant_message.metrics.stop_timer()
 
             # Parse the response into an Agno ModelResponse object
             provider_response: ModelResponse = self._parse_provider_response(response, response_format=response_format)
@@ -572,10 +570,8 @@ class OpenAIChat(Model):
         """
 
         try:
-            if run_response and run_response.metrics:
-                run_response.metrics.set_time_to_first_token()
-
-            assistant_message.metrics.start_timer()
+            # Initialize MessageMetrics and start timer
+            self._ensure_message_metrics_initialized(assistant_message)
 
             for chunk in self.get_client().chat.completions.create(
                 model=self.id,
@@ -588,7 +584,8 @@ class OpenAIChat(Model):
             ):
                 yield self._parse_provider_response_delta(chunk)
 
-            assistant_message.metrics.stop_timer()
+            if assistant_message.metrics is not None:
+                assistant_message.metrics.stop_timer()
 
         except RateLimitError as e:
             log_error(f"Rate limit error from OpenAI API: {e}")
@@ -653,10 +650,8 @@ class OpenAIChat(Model):
         """
 
         try:
-            if run_response and run_response.metrics:
-                run_response.metrics.set_time_to_first_token()
-
-            assistant_message.metrics.start_timer()
+            # Initialize MessageMetrics and start timer
+            self._ensure_message_metrics_initialized(assistant_message)
 
             async_stream = await self.get_async_client().chat.completions.create(
                 model=self.id,
@@ -671,7 +666,8 @@ class OpenAIChat(Model):
             async for chunk in async_stream:
                 yield self._parse_provider_response_delta(chunk)
 
-            assistant_message.metrics.stop_timer()
+            if assistant_message.metrics is not None:
+                assistant_message.metrics.stop_timer()
 
         except RateLimitError as e:
             log_error(f"Rate limit error from OpenAI API: {e}")
@@ -942,7 +938,7 @@ class OpenAIChat(Model):
 
         return model_response
 
-    def _get_metrics(self, response_usage: CompletionUsage) -> Metrics:
+    def _get_metrics(self, response_usage: CompletionUsage) -> RunMetrics:
         """
         Parse the given OpenAI-specific usage into an Agno Metrics object.
 
@@ -953,7 +949,7 @@ class OpenAIChat(Model):
             Metrics: Parsed metrics data
         """
 
-        metrics = Metrics()
+        metrics = RunMetrics()
 
         metrics.input_tokens = response_usage.prompt_tokens or 0
         metrics.output_tokens = response_usage.completion_tokens or 0
@@ -968,7 +964,21 @@ class OpenAIChat(Model):
         if completion_tokens_details := response_usage.completion_tokens_details:
             metrics.audio_output_tokens = completion_tokens_details.audio_tokens or 0
             metrics.reasoning_tokens = completion_tokens_details.reasoning_tokens or 0
+            # Capture prediction tokens
+            accepted = getattr(completion_tokens_details, "accepted_prediction_tokens", None)
+            rejected = getattr(completion_tokens_details, "rejected_prediction_tokens", None)
+            if accepted is not None or rejected is not None:
+                if metrics.provider_metrics is None:
+                    metrics.provider_metrics = {}
+                if accepted is not None:
+                    metrics.provider_metrics["accepted_prediction_tokens"] = accepted
+                if rejected is not None:
+                    metrics.provider_metrics["rejected_prediction_tokens"] = rejected
 
-        metrics.cost = getattr(response_usage, "cost", None)
+        cost = getattr(response_usage, "cost", None)
+        if cost is not None:
+            if metrics.provider_metrics is None:
+                metrics.provider_metrics = {}
+            metrics.provider_metrics["cost"] = cost
 
         return metrics

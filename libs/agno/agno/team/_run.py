@@ -31,7 +31,7 @@ from agno.filters import FilterExpr
 from agno.media import Audio, File, Image, Video
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics
 from agno.models.response import ModelResponse
 from agno.run import RunContext, RunStatus
 from agno.run.agent import RunOutput, RunOutputEvent
@@ -265,10 +265,12 @@ def _run(
                 raise_if_cancelled(run_response.run_id)  # type: ignore
 
                 # If an output model is provided, generate output using the output model
-                team._parse_response_with_output_model(model_response, run_messages)
+                team._parse_response_with_output_model(model_response, run_messages, run_response=run_response)
 
                 # If a parser model is provided, structure the response separately
-                team._parse_response_with_parser_model(model_response, run_messages, run_context=run_context)
+                team._parse_response_with_parser_model(
+                    model_response, run_messages, run_context=run_context, run_response=run_response
+                )
 
                 # 7. Update TeamRunOutput with the model response
                 team._update_run_response(
@@ -951,7 +953,7 @@ def run(
         run_response.model_provider = team.model.provider if team.model is not None else None
 
         # Start the run metrics timer, to calculate the run duration
-        run_response.metrics = Metrics()
+        run_response.metrics = RunMetrics()
         run_response.metrics.start_timer()
     except Exception:
         cleanup_run(run_id)
@@ -1143,12 +1145,13 @@ async def _arun(
 
                 # If an output model is provided, generate output using the output model
                 await team._agenerate_response_with_output_model(
-                    model_response=model_response, run_messages=run_messages
+                    model_response=model_response, run_messages=run_messages, run_response=run_response
                 )
 
                 # If a parser model is provided, structure the response separately
                 await team._aparse_response_with_parser_model(
-                    model_response=model_response, run_messages=run_messages, run_context=run_context
+                    model_response=model_response, run_messages=run_messages, run_context=run_context,
+                    run_response=run_response
                 )
 
                 # 7. Update TeamRunOutput with the model response
@@ -1841,7 +1844,7 @@ def arun(  # type: ignore
     run_response.model_provider = team.model.provider if team.model is not None else None
 
     # Start the run metrics timer, to calculate the run duration
-    run_response.metrics = Metrics()
+    run_response.metrics = RunMetrics()
     run_response.metrics.start_timer()
 
     if stream:

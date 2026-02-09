@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics
 from agno.models.response import ModelResponse
 from agno.reasoning.step import NextAction, ReasoningStep, ReasoningSteps
 from agno.run import RunContext
@@ -126,7 +126,11 @@ def process_parser_response(
 
 
 def parse_response_with_parser_model(
-    team: "Team", model_response: ModelResponse, run_messages: RunMessages, run_context: Optional[RunContext] = None
+    team: "Team",
+    model_response: ModelResponse,
+    run_messages: RunMessages,
+    run_context: Optional[RunContext] = None,
+    run_response: Optional["TeamRunOutput"] = None,
 ) -> None:
     """Parse the model response using the parser model."""
     if team.parser_model is None:
@@ -145,12 +149,20 @@ def parse_response_with_parser_model(
             response_format=parser_response_format,
         )
         process_parser_response(team, model_response, run_messages, parser_model_response, messages_for_parser_model)
+
+        # Accumulate metrics immediately
+        if run_response is not None:
+            team._accumulate_model_metrics(parser_model_response, team.parser_model, "parser_model", run_response)
     else:
         log_warning("A response model is required to parse the response with a parser model")
 
 
 async def aparse_response_with_parser_model(
-    team: "Team", model_response: ModelResponse, run_messages: RunMessages, run_context: Optional[RunContext] = None
+    team: "Team",
+    model_response: ModelResponse,
+    run_messages: RunMessages,
+    run_context: Optional[RunContext] = None,
+    run_response: Optional["TeamRunOutput"] = None,
 ) -> None:
     """Parse the model response using the parser model."""
     if team.parser_model is None:
@@ -169,6 +181,10 @@ async def aparse_response_with_parser_model(
             response_format=parser_response_format,
         )
         process_parser_response(team, model_response, run_messages, parser_model_response, messages_for_parser_model)
+
+        # Accumulate metrics immediately
+        if run_response is not None:
+            team._accumulate_model_metrics(parser_model_response, team.parser_model, "parser_model", run_response)
     else:
         log_warning("A response model is required to parse the response with a parser model")
 
@@ -204,6 +220,8 @@ def parse_response_with_parser_model_stream(
                 messages=messages_for_parser_model,
                 response_format=parser_response_format,
                 stream_model_response=False,
+                model_type="parser_model",
+                run_response=run_response,
             ):
                 yield from team._handle_model_response_chunk(
                     session=session,
@@ -271,6 +289,8 @@ async def aparse_response_with_parser_model_stream(
                 messages=messages_for_parser_model,
                 response_format=parser_response_format,
                 stream_model_response=False,
+                model_type="parser_model",
+                run_response=run_response,
             )
             async for model_response_event in model_response_stream:  # type: ignore
                 for event in team._handle_model_response_chunk(
@@ -313,7 +333,12 @@ async def aparse_response_with_parser_model_stream(
 # ---------------------------------------------------------------------------
 
 
-def parse_response_with_output_model(team: "Team", model_response: ModelResponse, run_messages: RunMessages) -> None:
+def parse_response_with_output_model(
+    team: "Team",
+    model_response: ModelResponse,
+    run_messages: RunMessages,
+    run_response: Optional["TeamRunOutput"] = None,
+) -> None:
     """Parse the model response using the output model."""
     if team.output_model is None:
         return
@@ -321,6 +346,10 @@ def parse_response_with_output_model(team: "Team", model_response: ModelResponse
     messages_for_output_model = team._get_messages_for_output_model(run_messages.messages)
     output_model_response: ModelResponse = team.output_model.response(messages=messages_for_output_model)
     model_response.content = output_model_response.content
+
+    # Accumulate metrics immediately
+    if run_response is not None:
+        team._accumulate_model_metrics(output_model_response, team.output_model, "output_model", run_response)
 
 
 def generate_response_with_output_model_stream(
@@ -350,7 +379,9 @@ def generate_response_with_output_model_stream(
     messages_for_output_model = team._get_messages_for_output_model(run_messages.messages)
     model_response = ModelResponse(content="")
 
-    for model_response_event in team.output_model.response_stream(messages=messages_for_output_model):
+    for model_response_event in team.output_model.response_stream(
+        messages=messages_for_output_model, model_type="output_model", run_response=run_response
+    ):
         yield from team._handle_model_response_chunk(
             session=session,
             run_response=run_response,
@@ -373,12 +404,14 @@ def generate_response_with_output_model_stream(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the RunResponse messages
     run_response.messages = messages_for_run_response
-    # Update the RunResponse metrics
-    run_response.metrics = calculate_metrics(team, messages_for_run_response, current_run_metrics=run_response.metrics)
+    # Metrics are already accumulated immediately during model calls
 
 
 async def agenerate_response_with_output_model(
-    team: "Team", model_response: ModelResponse, run_messages: RunMessages
+    team: "Team",
+    model_response: ModelResponse,
+    run_messages: RunMessages,
+    run_response: Optional["TeamRunOutput"] = None,
 ) -> None:
     """Parse the model response using the output model stream."""
     if team.output_model is None:
@@ -387,6 +420,10 @@ async def agenerate_response_with_output_model(
     messages_for_output_model = team._get_messages_for_output_model(run_messages.messages)
     output_model_response: ModelResponse = await team.output_model.aresponse(messages=messages_for_output_model)
     model_response.content = output_model_response.content
+
+    # Accumulate metrics immediately
+    if run_response is not None:
+        team._accumulate_model_metrics(output_model_response, team.output_model, "output_model", run_response)
 
 
 async def agenerate_response_with_output_model_stream(
@@ -416,7 +453,9 @@ async def agenerate_response_with_output_model_stream(
     messages_for_output_model = team._get_messages_for_output_model(run_messages.messages)
     model_response = ModelResponse(content="")
 
-    async for model_response_event in team.output_model.aresponse_stream(messages=messages_for_output_model):
+    async for model_response_event in team.output_model.aresponse_stream(
+        messages=messages_for_output_model, model_type="output_model", run_response=run_response
+    ):
         for event in team._handle_model_response_chunk(
             session=session,
             run_response=run_response,
@@ -440,8 +479,7 @@ async def agenerate_response_with_output_model_stream(
     messages_for_run_response = [m for m in run_messages.messages if m.add_to_agent_memory]
     # Update the RunResponse messages
     run_response.messages = messages_for_run_response
-    # Update the RunResponse metrics
-    run_response.metrics = calculate_metrics(team, messages_for_run_response, current_run_metrics=run_response.metrics)
+    # Metrics are already accumulated immediately during model calls
 
 
 # ---------------------------------------------------------------------------
@@ -449,45 +487,131 @@ async def agenerate_response_with_output_model_stream(
 # ---------------------------------------------------------------------------
 
 
-def calculate_metrics(team: "Team", messages: List[Message], current_run_metrics: Optional[Metrics] = None) -> Metrics:
-    metrics = current_run_metrics or Metrics()
-    assistant_message_role = team.model.assistant_message_role if team.model is not None else "assistant"
-
-    for m in messages:
-        if m.role == assistant_message_role and m.metrics is not None and m.from_history is False:
-            metrics += m.metrics
-
-    # If the run metrics were already initialized, keep the time related metrics
-    if current_run_metrics is not None:
-        metrics.timer = current_run_metrics.timer
-        metrics.duration = current_run_metrics.duration
-        metrics.time_to_first_token = current_run_metrics.time_to_first_token
-
-    return metrics
+def recalculate_metrics_after_session_summary(
+    team: "Team", run_response: TeamRunOutput, run_messages: RunMessages
+) -> None:
+    """Recalculate run metrics to include session summary model metrics."""
+    # Metrics are now accumulated immediately during model calls, so no recalculation needed
+    pass
 
 
-def get_session_metrics(team: "Team", session: TeamSession) -> Metrics:
-    # Get the session_metrics from the database
+def get_session_metrics_internal(team: "Team", session: TeamSession) -> "SessionMetrics":
+    """Tolerant deserialization of session metrics from DB."""
+    from agno.metrics import SessionMetrics, SessionModelMetrics
+
     if session.session_data is not None and "session_metrics" in session.session_data:
         session_metrics_from_db = session.session_data.get("session_metrics")
         if session_metrics_from_db is not None:
             if isinstance(session_metrics_from_db, dict):
-                return Metrics(**session_metrics_from_db)
-            elif isinstance(session_metrics_from_db, Metrics):
+                # Strip fields that should not be deserialized into SessionMetrics
+                legacy_keys = {"timer", "duration", "time_to_first_token"}
+                cleaned = {k: v for k, v in session_metrics_from_db.items() if k not in legacy_keys}
+                # Convert details list entries to SessionModelMetrics
+                if "details" in cleaned and isinstance(cleaned["details"], list):
+                    new_details = []
+                    for d in cleaned["details"]:
+                        if isinstance(d, dict):
+                            new_details.append(SessionModelMetrics.from_dict(d))
+                        elif isinstance(d, SessionModelMetrics):
+                            new_details.append(d)
+                    cleaned["details"] = new_details
+                return SessionMetrics(**cleaned)
+            elif isinstance(session_metrics_from_db, SessionMetrics):
+                # Ensure details are SessionModelMetrics objects
+                if session_metrics_from_db.details:
+                    new_details = []
+                    for d in session_metrics_from_db.details:
+                        if isinstance(d, dict):
+                            new_details.append(SessionModelMetrics.from_dict(d))
+                        else:
+                            new_details.append(d)
+                    session_metrics_from_db.details = new_details
                 return session_metrics_from_db
+            elif isinstance(session_metrics_from_db, RunMetrics):
+                return SessionMetrics(
+                    input_tokens=session_metrics_from_db.input_tokens,
+                    output_tokens=session_metrics_from_db.output_tokens,
+                    total_tokens=session_metrics_from_db.total_tokens,
+                    audio_input_tokens=session_metrics_from_db.audio_input_tokens,
+                    audio_output_tokens=session_metrics_from_db.audio_output_tokens,
+                    audio_total_tokens=session_metrics_from_db.audio_total_tokens,
+                    cache_read_tokens=session_metrics_from_db.cache_read_tokens,
+                    cache_write_tokens=session_metrics_from_db.cache_write_tokens,
+                    reasoning_tokens=session_metrics_from_db.reasoning_tokens,
+                )
 
-    return Metrics()
+    return SessionMetrics()
+
+
+def get_session_metrics(team: "Team", session: TeamSession) -> "SessionMetrics":
+    return get_session_metrics_internal(team, session)
 
 
 def update_session_metrics(team: "Team", session: TeamSession, run_response: TeamRunOutput) -> None:
-    """Calculate session metrics"""
-    session_metrics = get_session_metrics(team, session=session)
-    # Add the metrics for the current run to the session metrics
+    """Calculate session metrics using new accumulation logic."""
+    from agno.metrics import SessionMetrics, SessionModelMetrics
+
+    session_metrics = get_session_metrics_internal(team, session=session)
+
     if run_response.metrics is not None:
-        session_metrics += run_response.metrics
-    session_metrics.time_to_first_token = None
+        run_m = run_response.metrics
+        # Accumulate token counts
+        session_metrics.input_tokens = (session_metrics.input_tokens or 0) + (run_m.input_tokens or 0)
+        session_metrics.output_tokens = (session_metrics.output_tokens or 0) + (run_m.output_tokens or 0)
+        session_metrics.total_tokens = (session_metrics.total_tokens or 0) + (run_m.total_tokens or 0)
+        session_metrics.audio_input_tokens = (session_metrics.audio_input_tokens or 0) + (run_m.audio_input_tokens or 0)
+        session_metrics.audio_output_tokens = (session_metrics.audio_output_tokens or 0) + (run_m.audio_output_tokens or 0)
+        session_metrics.audio_total_tokens = (session_metrics.audio_total_tokens or 0) + (run_m.audio_total_tokens or 0)
+        session_metrics.cache_read_tokens = (session_metrics.cache_read_tokens or 0) + (run_m.cache_read_tokens or 0)
+        session_metrics.cache_write_tokens = (session_metrics.cache_write_tokens or 0) + (run_m.cache_write_tokens or 0)
+        session_metrics.reasoning_tokens = (session_metrics.reasoning_tokens or 0) + (run_m.reasoning_tokens or 0)
+
+        # Accumulate cost
+        if run_m.cost is not None:
+            session_metrics.cost = (session_metrics.cost or 0) + run_m.cost
+
+        # Merge provider_metrics
+        if run_m.provider_metrics is not None:
+            if session_metrics.provider_metrics is None:
+                session_metrics.provider_metrics = {}
+            session_metrics.provider_metrics.update(run_m.provider_metrics)
+
+        # Merge additional_metrics
+        if run_m.additional_metrics is not None:
+            if session_metrics.additional_metrics is None:
+                session_metrics.additional_metrics = {}
+            session_metrics.additional_metrics.update(run_m.additional_metrics)
+
+        # Weighted average duration
+        old_total = session_metrics.total_runs or 0
+        old_avg = session_metrics.average_duration or 0.0
+        run_duration = run_m.duration or 0.0
+        new_total = old_total + 1
+        session_metrics.average_duration = ((old_avg * old_total) + run_duration) / new_total if new_total else 0.0
+        session_metrics.total_runs = new_total
+
+        # Accumulate per-model details
+        details_dict: dict = {}
+        if session_metrics.details:
+            for d in session_metrics.details:
+                key = (d.provider, d.id)
+                details_dict[key] = d
+
+        if hasattr(run_m, "details") and isinstance(run_m.details, dict):
+            for model_type, model_metrics_list in run_m.details.items():
+                for mm in model_metrics_list:
+                    key = (mm.provider, mm.id)
+                    if key in details_dict:
+                        existing = details_dict[key]
+                        existing.accumulate(mm)
+                        existing.total_runs += 1
+                    else:
+                        details_dict[key] = SessionModelMetrics.from_model_metrics(mm, total_runs=1)
+
+        session_metrics.details = list(details_dict.values())
+
     if session.session_data is not None:
-        session.session_data["session_metrics"] = session_metrics
+        session.session_data["session_metrics"] = session_metrics.to_dict()
 
 
 # ---------------------------------------------------------------------------

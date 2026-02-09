@@ -37,7 +37,7 @@ from agno.media import Audio, File, Image, Video
 from agno.memory import MemoryManager
 from agno.models.base import Model
 from agno.models.message import Message
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics, SessionMetrics, SessionModelMetrics
 from agno.models.response import ModelResponse
 from agno.reasoning.step import ReasoningStep
 from agno.registry.registry import Registry
@@ -1268,14 +1268,26 @@ class Team:
         )
 
     def _parse_response_with_parser_model(
-        self, model_response: ModelResponse, run_messages: RunMessages, run_context: Optional[RunContext] = None
+        self,
+        model_response: ModelResponse,
+        run_messages: RunMessages,
+        run_context: Optional[RunContext] = None,
+        run_response: Optional[TeamRunOutput] = None,
     ) -> None:
-        _response.parse_response_with_parser_model(self, model_response, run_messages, run_context=run_context)
+        _response.parse_response_with_parser_model(
+            self, model_response, run_messages, run_context=run_context, run_response=run_response
+        )
 
     async def _aparse_response_with_parser_model(
-        self, model_response: ModelResponse, run_messages: RunMessages, run_context: Optional[RunContext] = None
+        self,
+        model_response: ModelResponse,
+        run_messages: RunMessages,
+        run_context: Optional[RunContext] = None,
+        run_response: Optional[TeamRunOutput] = None,
     ) -> None:
-        await _response.aparse_response_with_parser_model(self, model_response, run_messages, run_context=run_context)
+        await _response.aparse_response_with_parser_model(
+            self, model_response, run_messages, run_context=run_context, run_response=run_response
+        )
 
     def _parse_response_with_parser_model_stream(
         self,
@@ -1300,8 +1312,13 @@ class Team:
         ):
             yield event
 
-    def _parse_response_with_output_model(self, model_response: ModelResponse, run_messages: RunMessages) -> None:
-        _response.parse_response_with_output_model(self, model_response, run_messages)
+    def _parse_response_with_output_model(
+        self,
+        model_response: ModelResponse,
+        run_messages: RunMessages,
+        run_response: Optional[TeamRunOutput] = None,
+    ) -> None:
+        _response.parse_response_with_output_model(self, model_response, run_messages, run_response=run_response)
 
     def _generate_response_with_output_model_stream(
         self,
@@ -1315,9 +1332,14 @@ class Team:
         )
 
     async def _agenerate_response_with_output_model(
-        self, model_response: ModelResponse, run_messages: RunMessages
+        self,
+        model_response: ModelResponse,
+        run_messages: RunMessages,
+        run_response: Optional[TeamRunOutput] = None,
     ) -> None:
-        await _response.agenerate_response_with_output_model(self, model_response, run_messages)
+        await _response.agenerate_response_with_output_model(
+            self, model_response, run_messages, run_response=run_response
+        )
 
     async def _agenerate_response_with_output_model_stream(
         self,
@@ -1544,10 +1566,19 @@ class Team:
         ):
             yield item
 
-    def _calculate_metrics(self, messages: List[Message], current_run_metrics: Optional[Metrics] = None) -> Metrics:
-        return _response.calculate_metrics(self, messages, current_run_metrics=current_run_metrics)
+    def _accumulate_model_metrics(
+        self,
+        model_response: ModelResponse,
+        model: Model,
+        model_type: str,
+        run_response: TeamRunOutput,
+    ) -> None:
+        """Accumulate metrics from a model response into run_response.metrics."""
+        from agno.metrics import accumulate_model_metrics
 
-    def _get_session_metrics(self, session: TeamSession) -> Metrics:
+        accumulate_model_metrics(model_response, model, model_type, run_response)
+
+    def _get_session_metrics(self, session: TeamSession) -> SessionMetrics:
         return _response.get_session_metrics(self, session)
 
     def _update_session_metrics(self, session: TeamSession, run_response: TeamRunOutput):
@@ -2089,10 +2120,10 @@ class Team:
             self, session_state_updates=session_state_updates, session_id=session_id
         )
 
-    def get_session_metrics(self, session_id: Optional[str] = None) -> Optional[Metrics]:
+    def get_session_metrics(self, session_id: Optional[str] = None) -> Optional[SessionMetrics]:
         return _storage.get_session_metrics(self, session_id=session_id)
 
-    async def aget_session_metrics(self, session_id: Optional[str] = None) -> Optional[Metrics]:
+    async def aget_session_metrics(self, session_id: Optional[str] = None) -> Optional[SessionMetrics]:
         return await _storage.aget_session_metrics(self, session_id=session_id)
 
     def delete_session(self, session_id: str):

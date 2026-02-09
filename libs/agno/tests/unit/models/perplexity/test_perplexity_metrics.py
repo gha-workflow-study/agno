@@ -7,7 +7,7 @@ incorrect accumulation of cumulative token counts in streaming responses.
 
 from typing import Optional
 
-from agno.models.metrics import Metrics
+from agno.metrics import RunMetrics as Metrics
 from agno.models.perplexity.perplexity import Perplexity
 
 
