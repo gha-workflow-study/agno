@@ -44,10 +44,10 @@ from rich.prompt import Prompt
 # ============================================================================
 # Storage Configuration
 # ============================================================================
-agent_db = SqliteDb(db_file="tmp/agents.db")
+agent_db = SqliteDb(db_file="tmp/agents.db", knowledge_table="hitl_knowledge")
 
 # ============================================================================
-# Knowledge Base for Learnings
+# Knowledge Base for Learnings (uses separate table for HITL agent)
 # ============================================================================
 learnings_kb = Knowledge(
     name="Agent Learnings HITL",
