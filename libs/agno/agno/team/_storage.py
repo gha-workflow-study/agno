@@ -157,13 +157,13 @@ def _scrub_member_responses(team: "Team", member_responses: List[Union[TeamRunOu
 
 
 def _read_session(
-    team: "Team", session_id: str, session_type: SessionType = SessionType.TEAM
+    team: "Team", session_id: str, session_type: SessionType = SessionType.TEAM, user_id: Optional[str] = None
 ) -> Optional[Union[TeamSession, WorkflowSession]]:
     """Get a Session from the database."""
     try:
         if not team.db:
             raise ValueError("Db not initialized")
-        session = team.db.get_session(session_id=session_id, session_type=session_type)
+        session = team.db.get_session(session_id=session_id, session_type=session_type, user_id=user_id)
         return session  # type: ignore
     except Exception as e:
         import traceback
@@ -174,14 +174,14 @@ def _read_session(
 
 
 async def _aread_session(
-    team: "Team", session_id: str, session_type: SessionType = SessionType.TEAM
+    team: "Team", session_id: str, session_type: SessionType = SessionType.TEAM, user_id: Optional[str] = None
 ) -> Optional[Union[TeamSession, WorkflowSession]]:
     """Get a Session from the database."""
     try:
         if not team.db:
             raise ValueError("Db not initialized")
         team.db = cast(AsyncBaseDb, team.db)
-        session = await team.db.get_session(session_id=session_id, session_type=session_type)
+        session = await team.db.get_session(session_id=session_id, session_type=session_type, user_id=user_id)
         return session  # type: ignore
     except Exception as e:
         import traceback
@@ -232,13 +232,17 @@ def _read_or_create_session(team: "Team", session_id: str, user_id: Optional[str
     from agno.session.team import TeamSession
 
     # Return existing session if we have one
-    if team._cached_session is not None and team._cached_session.session_id == session_id:
+    if (
+        team._cached_session is not None
+        and team._cached_session.session_id == session_id
+        and (user_id is None or team._cached_session.user_id == user_id)
+    ):
         return team._cached_session
 
     # Try to load from database
     team_session = None
     if team.db is not None and team.parent_team_id is None and team.workflow_id is None:
-        team_session = cast(TeamSession, team._read_session(session_id=session_id))
+        team_session = cast(TeamSession, team._read_session(session_id=session_id, user_id=user_id))
 
     # Create new session if none found
     if team_session is None:
@@ -290,16 +294,20 @@ async def _aread_or_create_session(team: "Team", session_id: str, user_id: Optio
     from agno.session.team import TeamSession
 
     # Return existing session if we have one
-    if team._cached_session is not None and team._cached_session.session_id == session_id:
+    if (
+        team._cached_session is not None
+        and team._cached_session.session_id == session_id
+        and (user_id is None or team._cached_session.user_id == user_id)
+    ):
         return team._cached_session
 
     # Try to load from database
     team_session = None
     if team.db is not None and team.parent_team_id is None and team.workflow_id is None:
         if team._has_async_db():
-            team_session = cast(TeamSession, await team._aread_session(session_id=session_id))
+            team_session = cast(TeamSession, await team._aread_session(session_id=session_id, user_id=user_id))
         else:
-            team_session = cast(TeamSession, team._read_session(session_id=session_id))
+            team_session = cast(TeamSession, team._read_session(session_id=session_id, user_id=user_id))
 
     # Create new session if none found
     if team_session is None:
@@ -1199,6 +1207,7 @@ async def aget_last_run_output(team: "Team", session_id: Optional[str] = None) -
 def get_session(
     team: "Team",
     session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Optional[TeamSession]:
     """Load an TeamSession from database.
 
@@ -1215,7 +1224,9 @@ def get_session(
 
     # If there is a cached session, return it
     if team.cache_session and hasattr(team, "_cached_session") and team._cached_session is not None:
-        if team._cached_session.session_id == session_id_to_load:
+        if team._cached_session.session_id == session_id_to_load and (
+            user_id is None or team._cached_session.user_id == user_id
+        ):
             return team._cached_session
 
     if team._has_async_db():
@@ -1226,7 +1237,7 @@ def get_session(
         loaded_session = None
         # We have a standalone team, so we are loading a TeamSession
         if team.workflow_id is None:
-            loaded_session = cast(TeamSession, team._read_session(session_id=session_id_to_load))  # type: ignore
+            loaded_session = cast(TeamSession, team._read_session(session_id=session_id_to_load, user_id=user_id))  # type: ignore
         # We have a workflow team, so we are loading a WorkflowSession
         else:
             loaded_session = cast(
@@ -1234,6 +1245,7 @@ def get_session(
                 team._read_session(
                     session_id=session_id_to_load,  # type: ignore
                     session_type=SessionType.WORKFLOW,
+                    user_id=user_id,
                 ),
             )
 
@@ -1250,6 +1262,7 @@ def get_session(
 async def aget_session(
     team: "Team",
     session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Optional[TeamSession]:
     """Load an TeamSession from database.
 
@@ -1266,7 +1279,9 @@ async def aget_session(
 
     # If there is a cached session, return it
     if team.cache_session and hasattr(team, "_cached_session") and team._cached_session is not None:
-        if team._cached_session.session_id == session_id_to_load:
+        if team._cached_session.session_id == session_id_to_load and (
+            user_id is None or team._cached_session.user_id == user_id
+        ):
             return team._cached_session
 
     # Load and return the session from the database
@@ -1275,9 +1290,11 @@ async def aget_session(
         # We have a standalone team, so we are loading a TeamSession
         if team.workflow_id is None:
             if team._has_async_db():
-                loaded_session = cast(TeamSession, await team._aread_session(session_id=session_id_to_load))  # type: ignore
+                loaded_session = cast(
+                    TeamSession, await team._aread_session(session_id=session_id_to_load, user_id=user_id)
+                )  # type: ignore
             else:
-                loaded_session = cast(TeamSession, team._read_session(session_id=session_id_to_load))  # type: ignore
+                loaded_session = cast(TeamSession, team._read_session(session_id=session_id_to_load, user_id=user_id))  # type: ignore
         # We have a workflow team, so we are loading a WorkflowSession
         else:
             if team._has_async_db():
@@ -1286,6 +1303,7 @@ async def aget_session(
                     await team._aread_session(
                         session_id=session_id_to_load,  # type: ignore
                         session_type=SessionType.WORKFLOW,
+                        user_id=user_id,
                     ),
                 )
             else:
@@ -1294,6 +1312,7 @@ async def aget_session(
                     team._read_session(
                         session_id=session_id_to_load,  # type: ignore
                         session_type=SessionType.WORKFLOW,
+                        user_id=user_id,
                     ),
                 )
 
@@ -1333,8 +1352,11 @@ def save_session(team: "Team", session: TeamSession) -> None:
                     else:
                         # Scrub individual member responses based on their storage flags
                         team._scrub_member_responses(run.member_responses)
-        team._upsert_session(session=session)
-        log_debug(f"Created or updated TeamSession record: {session.session_id}")
+        result = team._upsert_session(session=session)
+        if result is None:
+            log_warning(f"TeamSession not persisted (ownership mismatch): {session.session_id}")
+        else:
+            log_debug(f"Created or updated TeamSession record: {session.session_id}")
 
 
 async def asave_session(team: "Team", session: TeamSession) -> None:
@@ -1362,10 +1384,13 @@ async def asave_session(team: "Team", session: TeamSession) -> None:
                         team._scrub_member_responses(run.member_responses)
 
         if team._has_async_db():
-            await team._aupsert_session(session=session)
+            result = await team._aupsert_session(session=session)
         else:
-            team._upsert_session(session=session)
-        log_debug(f"Created or updated TeamSession record: {session.session_id}")
+            result = team._upsert_session(session=session)
+        if result is None:
+            log_warning(f"TeamSession not persisted (ownership mismatch): {session.session_id}")
+        else:
+            log_debug(f"Created or updated TeamSession record: {session.session_id}")
 
 
 def generate_session_name(team: "Team", session: TeamSession, _retries: int = 0) -> str:

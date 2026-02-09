@@ -1945,14 +1945,14 @@ class Team:
     # Session Management
     ###########################################################################
     def _read_session(
-        self, session_id: str, session_type: SessionType = SessionType.TEAM
+        self, session_id: str, session_type: SessionType = SessionType.TEAM, user_id: Optional[str] = None
     ) -> Optional[Union[TeamSession, WorkflowSession]]:
-        return _storage._read_session(self, session_id=session_id, session_type=session_type)
+        return _storage._read_session(self, session_id=session_id, session_type=session_type, user_id=user_id)
 
     async def _aread_session(
-        self, session_id: str, session_type: SessionType = SessionType.TEAM
+        self, session_id: str, session_type: SessionType = SessionType.TEAM, user_id: Optional[str] = None
     ) -> Optional[Union[TeamSession, WorkflowSession]]:
-        return await _storage._aread_session(self, session_id=session_id, session_type=session_type)
+        return await _storage._aread_session(self, session_id=session_id, session_type=session_type, user_id=user_id)
 
     def _upsert_session(self, session: TeamSession) -> Optional[TeamSession]:
         return _storage._upsert_session(self, session=session)
@@ -2035,14 +2035,16 @@ class Team:
     def get_session(
         self,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[TeamSession]:
-        return _storage.get_session(self, session_id=session_id)
+        return _storage.get_session(self, session_id=session_id, user_id=user_id)
 
     async def aget_session(
         self,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[TeamSession]:
-        return await _storage.aget_session(self, session_id=session_id)
+        return await _storage.aget_session(self, session_id=session_id, user_id=user_id)
 
     def save_session(self, session: TeamSession) -> None:
         return _storage.save_session(self, session=session)

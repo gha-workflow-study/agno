@@ -1068,18 +1068,18 @@ class Agent:
     # ---------------------------------------------------------------
 
     def _read_session(
-        self, session_id: str, session_type: Optional[SessionType] = SessionType.AGENT
+        self, session_id: str, session_type: Optional[SessionType] = SessionType.AGENT, user_id: Optional[str] = None
     ) -> Optional[Union[AgentSession, TeamSession, WorkflowSession]]:
         if session_type is None:
             session_type = SessionType.AGENT
-        return _storage.read_session(self, session_id=session_id, session_type=session_type)
+        return _storage.read_session(self, session_id=session_id, session_type=session_type, user_id=user_id)
 
     async def _aread_session(
-        self, session_id: str, session_type: Optional[SessionType] = SessionType.AGENT
+        self, session_id: str, session_type: Optional[SessionType] = SessionType.AGENT, user_id: Optional[str] = None
     ) -> Optional[Union[AgentSession, TeamSession, WorkflowSession]]:
         if session_type is None:
             session_type = SessionType.AGENT
-        return await _storage.aread_session(self, session_id=session_id, session_type=session_type)
+        return await _storage.aread_session(self, session_id=session_id, session_type=session_type, user_id=user_id)
 
     def _upsert_session(
         self, session: Union[AgentSession, TeamSession, WorkflowSession]
@@ -1166,14 +1166,16 @@ class Agent:
     def get_session(
         self,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[Union[AgentSession, TeamSession, WorkflowSession]]:
-        return _storage.get_session(self, session_id=session_id)
+        return _storage.get_session(self, session_id=session_id, user_id=user_id)
 
     async def aget_session(
         self,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[Union[AgentSession, TeamSession, WorkflowSession]]:
-        return await _storage.aget_session(self, session_id=session_id)
+        return await _storage.aget_session(self, session_id=session_id, user_id=user_id)
 
     def save_session(self, session: Union[AgentSession, TeamSession, WorkflowSession]) -> None:
         return _storage.save_session(self, session=session)
