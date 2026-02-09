@@ -1628,22 +1628,22 @@ async def aget_session_metrics(team: "Team", session_id: Optional[str] = None) -
     return await aget_session_metrics_util(cast(Any, team), session_id=session_id)
 
 
-def delete_session(team: "Team", session_id: str):
+def delete_session(team: "Team", session_id: str, user_id: Optional[str] = None):
     """Delete the current session and save to storage"""
     if team.db is None:
         return
 
-    team.db.delete_session(session_id=session_id)
+    team.db.delete_session(session_id=session_id, user_id=user_id)
 
 
-async def adelete_session(team: "Team", session_id: str):
+async def adelete_session(team: "Team", session_id: str, user_id: Optional[str] = None):
     """Delete the current session and save to storage"""
     if team.db is None:
         return
     if team._has_async_db():
-        await team.db.delete_session(session_id=session_id)  # type: ignore
+        await team.db.delete_session(session_id=session_id, user_id=user_id)  # type: ignore
     else:
-        team.db.delete_session(session_id=session_id)
+        team.db.delete_session(session_id=session_id, user_id=user_id)
 
 
 def get_session_messages(

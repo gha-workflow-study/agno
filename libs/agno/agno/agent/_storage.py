@@ -1529,19 +1529,19 @@ async def aget_session_metrics(agent: Agent, session_id: Optional[str] = None) -
     return await aget_session_metrics_util(agent, session_id=session_id)
 
 
-def delete_session(agent: Agent, session_id: str):
+def delete_session(agent: Agent, session_id: str, user_id: Optional[str] = None):
     """Delete the current session and save to storage"""
     if agent.db is None:
         return
 
-    agent.db.delete_session(session_id=session_id)
+    agent.db.delete_session(session_id=session_id, user_id=user_id)
 
 
-async def adelete_session(agent: Agent, session_id: str):
+async def adelete_session(agent: Agent, session_id: str, user_id: Optional[str] = None):
     """Delete the current session and save to storage"""
     if agent.db is None:
         return
-    await agent.db.delete_session(session_id=session_id)  # type: ignore
+    await agent.db.delete_session(session_id=session_id, user_id=user_id)  # type: ignore
 
 
 def get_session_messages(
